@@ -21,7 +21,7 @@ Material:
   m_PrefabInstance: {fileID: 0}
   m_PrefabAsset: {fileID: 0}
   m_Name: NoiseMaterial
-  m_Shader: {fileID: 4800000, guid: 4f4f2838e0b5446fe9ca87c558df8394, type: 3}
+  m_Shader: {fileID: 4800000, guid: e9ce2e74b776b41918ddb78120791a98, type: 3}
   m_Parent: {fileID: 0}
   m_ModifiedSerializedProperties: 0
   m_ValidKeywords: []
