@@ -4,7 +4,8 @@ using UnityEngine.UI;
 using UnityEditor;
 #endif
 
-[RequireComponent(typeof(Image))]
+// Funktioniert sowohl mit einem UI-Image (Canvas) als auch mit einem
+// SpriteRenderer (3D-Welt) – je nachdem, was auf dem GameObject liegt.
 public class EyeCycler : MonoBehaviour
 {
     [Tooltip("Ordner (relativ zum Projekt, z.B. Assets/Images/right_eyes), aus dem die Sprites im Editor automatisch geladen werden.")]
@@ -20,12 +21,17 @@ public class EyeCycler : MonoBehaviour
     public bool randomOrder = false;
 
     Image image;
+    SpriteRenderer spriteRenderer;
     int index;
     float timer;
 
     void Awake()
     {
         image = GetComponent<Image>();
+        spriteRenderer = GetComponent<SpriteRenderer>();
+
+        if (image == null && spriteRenderer == null)
+            Debug.LogWarning($"{nameof(EyeCycler)} auf \"{name}\" benötigt ein Image oder einen SpriteRenderer.", this);
     }
 
     void OnEnable()
@@ -67,8 +73,13 @@ public class EyeCycler : MonoBehaviour
 
     void ShowCurrent()
     {
-        if (eyeSprites != null && eyeSprites.Length > 0 && eyeSprites[index] != null)
+        if (eyeSprites == null || eyeSprites.Length == 0 || eyeSprites[index] == null)
+            return;
+
+        if (image != null)
             image.sprite = eyeSprites[index];
+        else if (spriteRenderer != null)
+            spriteRenderer.sprite = eyeSprites[index];
     }
 
 #if UNITY_EDITOR
