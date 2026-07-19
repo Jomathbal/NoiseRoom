@@ -148,6 +148,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c27995289e42e4f189ebd9de1b962b54, type: 3}
   m_Name: 
   m_EditorClassIdentifier: '::'
+  domeFader: {fileID: 315481186}
 --- !u!4 &161484059
 Transform:
   m_ObjectHideFlags: 0
@@ -267,9 +268,26 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::DomeImageFader
   domeRenderer: {fileID: 315481183}
+  imageFolder: Assets/Images/sky
   images:
-  - {fileID: 2800000, guid: 1b4146cdb6d844ba8bd95ec811979dd6, type: 3}
-  - {fileID: 2800000, guid: 7af7fb424825f4acc90485914ac76c7e, type: 3}
+  - {fileID: 2800000, guid: de6e96276be774dfd98b14cf93a090ba, type: 3}
+  - {fileID: 2800000, guid: f2149731cabce44e59618c9ec4cf8499, type: 3}
+  - {fileID: 2800000, guid: 4d3d890c7dd23422090a731ddcdd9748, type: 3}
+  - {fileID: 2800000, guid: d703f07aeec9c4e18a9a89c259f65503, type: 3}
+  - {fileID: 2800000, guid: 43efa77edcf20403393518dd89cfbef7, type: 3}
+  - {fileID: 2800000, guid: 0baf0e4a3ba944778a85acb61df9768c, type: 3}
+  - {fileID: 2800000, guid: 1ea510888b02949368a4e25735ce22d6, type: 3}
+  - {fileID: 2800000, guid: 58641869618ea4e21ac17c592fceb13b, type: 3}
+  - {fileID: 2800000, guid: 8d528615411564d9f8372ae6f441e220, type: 3}
+  - {fileID: 2800000, guid: 7e19a3016298546c09a093158d7996a7, type: 3}
+  - {fileID: 2800000, guid: 18793774118d54b53bddd4628b236e69, type: 3}
+  - {fileID: 2800000, guid: 77e5972e3730a485da81d2db159796fd, type: 3}
+  - {fileID: 2800000, guid: 8a647cedd0a1643fca63620aa33660a7, type: 3}
+  - {fileID: 2800000, guid: e109aa316b9ad410196b46eb4a13e19c, type: 3}
+  - {fileID: 2800000, guid: e8582a88632be44e2ace45ef9dc549ae, type: 3}
+  - {fileID: 2800000, guid: 092c032d56af24aa8a20dfd0ad4407e9, type: 3}
+  - {fileID: 2800000, guid: b4c1759f9db604801afa1b1db527edbb, type: 3}
+  - {fileID: 2800000, guid: eb1cd7433c4954d2484d4344b68ca1f8, type: 3}
   fadeDuration: 1.5
   startIndex: 0
 --- !u!1 &315668264
@@ -719,7 +737,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 410087039}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0.93052304, z: 0, w: 0.36623344}
+  m_LocalRotation: {x: 0, y: 0.7856594, z: 0, w: 0.61865926}
   m_LocalPosition: {x: 0, y: 3, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0

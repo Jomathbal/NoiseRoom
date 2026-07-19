@@ -8,6 +8,8 @@ public class APIController : MonoBehaviour
 {
     public enum DayPhase { Sunrise, Day, Sunset, Night }
 
+    [SerializeField] private DomeImageFader domeFader;
+
     // Dresden
     private const float Latitude = 51.0509f;
     private const float Longitude = 13.7383f;
@@ -17,6 +19,9 @@ public class APIController : MonoBehaviour
 
     /// <summary>Halbe Breite des Sonnenauf-/-untergangs-Fensters in Minuten.</summary>
     private const int TwilightWindowMinutes = 30;
+
+    /// <summary>Abstand zwischen zwei API-Abfragen in Sekunden.</summary>
+    [SerializeField] private float fetchIntervalSeconds = 120f;
 
     /// <summary>Der zuletzt abgerufene WMO Weather Code (-1 = noch kein Wert).</summary>
     public int CurrentWeatherCode { get; private set; } = -1;
@@ -32,7 +37,19 @@ public class APIController : MonoBehaviour
 
     void Start()
     {
-        StartCoroutine(FetchWeatherCode());
+        StartCoroutine(FetchLoop());
+    }
+
+    /// <summary>Fragt die API sofort und danach in festen Abständen ab.</summary>
+    private IEnumerator FetchLoop()
+    {
+        var wait = new WaitForSeconds(fetchIntervalSeconds);
+
+        while (true)
+        {
+            yield return FetchWeatherCode();
+            yield return wait;
+        }
     }
 
     public IEnumerator FetchWeatherCode()
@@ -71,8 +88,52 @@ public class APIController : MonoBehaviour
             {
                 Debug.LogError("Sunrise/Sunset fehlen in der Open-Meteo Antwort.");
             }
+
+            UpdateDomeImage();
         }
     }
+
+    /// <summary>Wählt anhand von Weather Code und Tagesphase das passende Dome-Bild aus.</summary>
+    private void UpdateDomeImage()
+    {
+        if (domeFader == null || CurrentWeatherCode < 0) return;
+
+        int group = MapWeatherCodeToImageGroup(CurrentWeatherCode);
+
+        // Nur für WMO 0 und 2 gibt es 4 Bilder (morgen/tag/abend/nacht),
+        // sonst nur tag/nacht: morgens -> tag, abends -> nacht
+        bool hasFourPhases = group == 0 || group == 2;
+
+        string phase = CurrentDayPhase switch
+        {
+            DayPhase.Sunrise => hasFourPhases ? "morgen" : "tag",
+            DayPhase.Day => "tag",
+            DayPhase.Sunset => hasFourPhases ? "abend" : "nacht",
+            _ => "nacht"
+        };
+
+        string imageName = $"wetter_{group}_{phase}";
+
+        if (domeFader.ShowImage(imageName))
+            Debug.Log($"Dome-Bild gewechselt zu: {imageName}");
+        else
+            Debug.LogWarning($"Dome-Bild \"{imageName}\" nicht im DomeImageFader gefunden.");
+    }
+
+    /// <summary>Ordnet einen WMO Weather Code einer der vorhandenen Bildgruppen zu.</summary>
+    private static int MapWeatherCodeToImageGroup(int code) => code switch
+    {
+        0 or 1 => 0,                  // klar / überwiegend klar
+        2 => 2,                       // teilweise bewölkt
+        3 => 3,                       // bedeckt
+        45 or 48 => 45,               // Nebel
+        >= 51 and <= 67 => 61,        // Niesel / Regen / gefrierender Regen
+        >= 71 and <= 77 => 71,        // Schnee
+        80 or 81 or 82 => 61,         // Regenschauer
+        85 or 86 => 71,               // Schneeschauer
+        >= 95 => 95,                  // Gewitter
+        _ => 3                        // Fallback: bedeckt
+    };
 
     private void DetermineDayPhase(string sunriseIso, string sunsetIso)
     {

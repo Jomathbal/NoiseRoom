@@ -1,4 +1,5 @@
 using System.Collections;
+using System.Linq;
 using UnityEngine;
 
 /// Überblendet vorab geladene Bilder als Base Albedo auf dem Dome.
@@ -6,7 +7,8 @@ using UnityEngine;
 public class DomeImageFader : MonoBehaviour
 {
     [SerializeField] private Renderer domeRenderer;
-    [SerializeField] private Texture2D[] images;
+    [SerializeField, HideInInspector] private string imageFolder; // Projektpfad, z.B. "Assets/Images/sky"
+    [SerializeField] private Texture2D[] images; // wird aus imageFolder befüllt
     [SerializeField] private float fadeDuration = 1.5f;
     [SerializeField] private int startIndex = 0;
 
@@ -38,6 +40,23 @@ public class DomeImageFader : MonoBehaviour
     public void ShowNext() => ShowImage((currentIndex + 1) % images.Length);
 
     public void ShowPrevious() => ShowImage((currentIndex - 1 + images.Length) % images.Length);
+
+    /// Zeigt das Bild mit dem angegebenen Texturnamen (ohne Dateiendung). Liefert false, wenn es nicht existiert.
+    public bool ShowImage(string imageName)
+    {
+        if (images == null) return false;
+
+        for (int i = 0; i < images.Length; i++)
+        {
+            if (images[i] != null &&
+                string.Equals(images[i].name, imageName, System.StringComparison.OrdinalIgnoreCase))
+            {
+                ShowImage(i);
+                return true;
+            }
+        }
+        return false;
+    }
 
     public void ShowImage(int index)
     {
@@ -81,4 +100,77 @@ public class DomeImageFader : MonoBehaviour
             ShowImage(next);
         }
     }
+
+#if UNITY_EDITOR
+    /// Befüllt das images-Array mit allen Texturen aus imageFolder (alphabetisch sortiert).
+    public void ReloadImagesFromFolder()
+    {
+        if (string.IsNullOrEmpty(imageFolder) || !UnityEditor.AssetDatabase.IsValidFolder(imageFolder))
+        {
+            Debug.LogWarning($"DomeImageFader: \"{imageFolder}\" ist kein gültiger Ordner im Projekt.", this);
+            return;
+        }
+
+        images = UnityEditor.AssetDatabase.FindAssets("t:Texture2D", new[] { imageFolder })
+            .Select(UnityEditor.AssetDatabase.GUIDToAssetPath)
+            .OrderBy(path => path, System.StringComparer.OrdinalIgnoreCase)
+            .Select(UnityEditor.AssetDatabase.LoadAssetAtPath<Texture2D>)
+            .Where(tex => tex != null)
+            .ToArray();
+
+        UnityEditor.EditorUtility.SetDirty(this);
+    }
+
+    [UnityEditor.CustomEditor(typeof(DomeImageFader))]
+    private class DomeImageFaderEditor : UnityEditor.Editor
+    {
+        public override void OnInspectorGUI()
+        {
+            var fader = (DomeImageFader)target;
+
+            // Ordner per Drag & Drop zuweisen; bei Änderung sofort neu laden
+            var currentFolder = UnityEditor.AssetDatabase.LoadAssetAtPath<UnityEditor.DefaultAsset>(fader.imageFolder ?? "");
+            UnityEditor.EditorGUI.BeginChangeCheck();
+            var newFolder = UnityEditor.EditorGUILayout.ObjectField(
+                "Bilder-Ordner", currentFolder, typeof(UnityEditor.DefaultAsset), false);
+            if (UnityEditor.EditorGUI.EndChangeCheck())
+            {
+                UnityEditor.Undo.RecordObject(fader, "Bilder-Ordner ändern");
+                fader.imageFolder = newFolder != null ? UnityEditor.AssetDatabase.GetAssetPath(newFolder) : "";
+                if (newFolder != null) fader.ReloadImagesFromFolder();
+                UnityEditor.EditorUtility.SetDirty(fader);
+            }
+
+            if (GUILayout.Button("Bilder neu laden")) fader.ReloadImagesFromFolder();
+
+            DrawDefaultInspector();
+
+            UnityEditor.EditorGUILayout.Space();
+            UnityEditor.EditorGUILayout.LabelField("Debug", UnityEditor.EditorStyles.boldLabel);
+
+            if (!Application.isPlaying)
+            {
+                UnityEditor.EditorGUILayout.HelpBox("Bildwechsel nur im Play Mode möglich.", UnityEditor.MessageType.Info);
+                return;
+            }
+
+            using (new UnityEditor.EditorGUILayout.HorizontalScope())
+            {
+                if (GUILayout.Button("◀ Vorheriges")) fader.ShowPrevious();
+                if (GUILayout.Button("Nächstes ▶")) fader.ShowNext();
+            }
+
+            if (fader.images == null) return;
+
+            for (int i = 0; i < fader.images.Length; i++)
+            {
+                string label = fader.images[i] != null ? $"{i}: {fader.images[i].name}" : $"{i}: (leer)";
+                using (new UnityEditor.EditorGUI.DisabledScope(i == fader.CurrentIndex))
+                {
+                    if (GUILayout.Button(label)) fader.ShowImage(i);
+                }
+            }
+        }
+    }
+#endif
 }
