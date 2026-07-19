@@ -10,10 +10,6 @@ Shader "Custom/RaytraceNoiseSurface"
         // X-Achse der Kurve im Inspector = normalisierter Winkel (0=0°, 1=180°)
         // Y-Achse = Noise-Anteil (0=komplett clean, 1=komplett schwarz/voll Noise)
 
-        _NoiseScale ("Noise Spatial Scale", Float) = 20.0
-        // Wie "fein" das Rauschmuster auf der Oberfläche ist.
-        // Höher = feinkörniger/dichter, niedriger = grobkörniger/geklumpter.
-
         _FlickerSpeed ("Flicker Speed", Float) = 1.0
         // 0 = kein Flackern (Noise-Muster steht still)
         // >0 = pro Frame neu gewürfelt, höher = "wilderes" Flackern
@@ -44,18 +40,19 @@ Shader "Custom/RaytraceNoiseSurface"
 
             struct Varyings
             {
-                float4 positionHCS   : SV_POSITION;
+                float4 positionHCS   : SV_POSITION; // im Fragment-Shader: Pixelkoordinaten (Screen Space)
                 float3 normalWS      : TEXCOORD0;
-                float3 positionOS    : TEXCOORD1; // Objektraum-Position, für stabilen Hash (klebt an Oberfläche)
             };
 
             TEXTURE2D(_NoiseCurveTex);
             SAMPLER(sampler_NoiseCurveTex);
 
+            // Größe eines Noise-"Korns" in Bildschirm-Pixeln (fest, nicht im Inspector einstellbar)
+            static const float NOISE_PIXEL_SIZE = 1.0;
+
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseColor;
                 float4 _ShadowColor;
-                float  _NoiseScale;
                 float  _FlickerSpeed;
             CBUFFER_END
 
@@ -64,16 +61,15 @@ Shader "Custom/RaytraceNoiseSurface"
                 Varyings OUT;
                 OUT.positionHCS = TransformObjectToHClip(IN.positionOS.xyz);
                 OUT.normalWS    = TransformObjectToWorldNormal(IN.normalOS);
-                OUT.positionOS  = IN.positionOS.xyz;
                 return OUT;
             }
 
-            // Einfache 3D-Hash-Funktion: Position + Seed (Zeit) -> pseudo-zufälliger Wert in [0,1)
-            float hash13(float3 p, float seed)
+            // 2D-Hash: Pixelkoordinate + Seed (Zeit) -> pseudo-zufälliger Wert in [0,1)
+            float hash12(float2 p, float seed)
             {
-                p = frac(p * 0.3183099 + seed);
-                p *= 17.0;
-                return frac(p.x * p.y * p.z * (p.x + p.y + p.z));
+                float3 p3 = frac(p.xyx * 0.1031 + seed);
+                p3 += dot(p3, p3.yzx + 33.33);
+                return frac((p3.x + p3.y) * p3.z);
             }
 
             half4 frag(Varyings IN) : SV_Target
@@ -90,8 +86,9 @@ Shader "Custom/RaytraceNoiseSurface"
                 float t = saturate(angle / PI);
                 float noiseAmount = SAMPLE_TEXTURE2D(_NoiseCurveTex, sampler_NoiseCurveTex, float2(t, 0.5)).r;
 
-                // Hash aus Objektraum-Position (+ Zeit für Flackern pro Frame)
-                float rnd = hash13(IN.positionOS * _NoiseScale, _Time.y * _FlickerSpeed);
+                // Hash aus Bildschirm-Pixelkoordinate (+ Zeit für Flackern pro Frame)
+                float2 pixelCoord = floor(IN.positionHCS.xy / NOISE_PIXEL_SIZE);
+                float rnd = hash12(pixelCoord, _Time.y * _FlickerSpeed);
 
                 // Hard Dropout: Pixel ist entweder normale Farbe oder komplett "Schatten"-Farbe
                 float lit = step(rnd, 1.0 - noiseAmount);
