@@ -23,6 +23,12 @@ public class APIController : MonoBehaviour
     /// <summary>Abstand zwischen zwei API-Abfragen in Sekunden.</summary>
     [SerializeField] private float fetchIntervalSeconds = 120f;
 
+    /// <summary>Wie oft bei einem Fehler erneut versucht wird, bevor bis zum nächsten Intervall gewartet wird.</summary>
+    [SerializeField] private int maxRetries = 3;
+
+    /// <summary>Wartezeit vor dem ersten erneuten Versuch in Sekunden (verdoppelt sich pro Versuch).</summary>
+    [SerializeField] private float retryDelaySeconds = 5f;
+
     /// <summary>Der zuletzt abgerufene WMO Weather Code (-1 = noch kein Wert).</summary>
     public int CurrentWeatherCode { get; private set; } = -1;
 
@@ -55,42 +61,58 @@ public class APIController : MonoBehaviour
     public IEnumerator FetchWeatherCode()
     {
         string url = string.Format(CultureInfo.InvariantCulture, Url, Latitude, Longitude);
+        string json = null;
 
-        using (UnityWebRequest request = UnityWebRequest.Get(url))
+        for (int attempt = 0; attempt <= maxRetries; attempt++)
         {
-            yield return request.SendWebRequest();
-
-            if (request.result != UnityWebRequest.Result.Success)
+            using (UnityWebRequest request = UnityWebRequest.Get(url))
             {
-                Debug.LogError($"Open-Meteo Anfrage fehlgeschlagen: {request.error}");
-                yield break;
+                yield return request.SendWebRequest();
+
+                if (request.result == UnityWebRequest.Result.Success)
+                {
+                    json = request.downloadHandler.text;
+                    break;
+                }
+
+                if (attempt < maxRetries)
+                {
+                    float delay = retryDelaySeconds * (1 << attempt);
+                    Debug.LogWarning($"Open-Meteo Anfrage fehlgeschlagen: {request.error} – neuer Versuch in {delay:0}s ({attempt + 1}/{maxRetries})");
+                    yield return new WaitForSeconds(delay);
+                }
+                else
+                {
+                    Debug.LogError($"Open-Meteo Anfrage fehlgeschlagen: {request.error} – alle {maxRetries} Wiederholungen erfolglos.");
+                    yield break;
+                }
             }
-
-            OpenMeteoResponse response = JsonUtility.FromJson<OpenMeteoResponse>(request.downloadHandler.text);
-
-            if (response == null || response.current == null)
-            {
-                Debug.LogError("Open-Meteo Antwort konnte nicht geparst werden.");
-                yield break;
-            }
-
-            CurrentWeatherCode = response.current.weather_code;
-            Debug.Log($"Aktueller WMO Weather Code für Dresden: {CurrentWeatherCode}");
-            OnWeatherCodeReceived?.Invoke(CurrentWeatherCode);
-
-            if (response.daily != null &&
-                response.daily.sunrise != null && response.daily.sunrise.Length > 0 &&
-                response.daily.sunset != null && response.daily.sunset.Length > 0)
-            {
-                DetermineDayPhase(response.daily.sunrise[0], response.daily.sunset[0]);
-            }
-            else
-            {
-                Debug.LogError("Sunrise/Sunset fehlen in der Open-Meteo Antwort.");
-            }
-
-            UpdateDomeImage();
         }
+
+        OpenMeteoResponse response = JsonUtility.FromJson<OpenMeteoResponse>(json);
+
+        if (response == null || response.current == null)
+        {
+            Debug.LogError("Open-Meteo Antwort konnte nicht geparst werden.");
+            yield break;
+        }
+
+        CurrentWeatherCode = response.current.weather_code;
+        Debug.Log($"Aktueller WMO Weather Code für Dresden: {CurrentWeatherCode}");
+        OnWeatherCodeReceived?.Invoke(CurrentWeatherCode);
+
+        if (response.daily != null &&
+            response.daily.sunrise != null && response.daily.sunrise.Length > 0 &&
+            response.daily.sunset != null && response.daily.sunset.Length > 0)
+        {
+            DetermineDayPhase(response.daily.sunrise[0], response.daily.sunset[0]);
+        }
+        else
+        {
+            Debug.LogError("Sunrise/Sunset fehlen in der Open-Meteo Antwort.");
+        }
+
+        UpdateDomeImage();
     }
 
     /// <summary>Wählt anhand von Weather Code und Tagesphase das passende Dome-Bild aus.</summary>

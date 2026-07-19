@@ -8,38 +8,33 @@ public class HumanPlacer : MonoBehaviour
 {
     [SerializeField] private GameObject prefab;
     [SerializeField, Min(0)] private int count = 10;
-    [SerializeField, Min(0f)] private float radius = 5f;
+    [SerializeField, Min(0f)] private float humanScale = 1f;
     [SerializeField] private bool faceCenter = false;
 
-    [Header("Camera Tracking")]
-    [SerializeField] private Camera mainCam;
-    [SerializeField, Min(0f)] private float padding = 2f;
-    [SerializeField, Min(0f)] private float minRadius = 1f;
-    [SerializeField, Min(0f)] private float maxRadius = 20f;
-    [SerializeField, Min(0f)] private float radiusLerpSpeed = 3f;
+    [Header("Morph Radien")]
+    [SerializeField, Min(0f)] private float coneRadius = 5f; // Radius bei t = 1 (Kegelform, pro Ring unterschiedlich)
+
+    // Aktuell wirksamer Radius; wird zur Laufzeit vom HumanConeController über SetMorph gesetzt
+    private float radius;
 
     private void Start()
     {
         if (Application.isPlaying)
+        {
+            radius = coneRadius;
             Rebuild();
+        }
     }
 
-    private void Update()
+    /// <summary>Setzt den Morph-Faktor: t = 1 → Kegelradius, t = 0 → Zylinderradius (kommt vom Controller).</summary>
+    public void SetMorph(float t, float cylinderRadius)
     {
-        if (mainCam == null)
+        float newRadius = Mathf.Lerp(cylinderRadius, coneRadius, Mathf.Clamp01(t));
+        if (Mathf.Approximately(newRadius, radius))
             return;
 
-        Vector3 delta = mainCam.transform.position - transform.position;
-        delta.y = 0f;
-        float targetRadius = Mathf.Clamp(delta.magnitude + padding, minRadius, maxRadius);
-        // Framerate-unabhängiges Lerp Richtung Zielradius
-        float newRadius = Mathf.Lerp(radius, targetRadius, 1f - Mathf.Exp(-radiusLerpSpeed * Time.deltaTime));
-
-        if (!Mathf.Approximately(newRadius, radius))
-        {
-            radius = newRadius;
-            Reposition();
-        }
+        radius = newRadius;
+        Reposition();
     }
 
     private void Reposition()
@@ -64,6 +59,8 @@ public class HumanPlacer : MonoBehaviour
         EditorApplication.delayCall += () =>
         {
             if (this == null) return;
+            if (!Application.isPlaying)
+                radius = coneRadius; // Editor-Vorschau zeigt die Kegelform (t = 1)
             Rebuild();
         };
 #endif
@@ -99,6 +96,7 @@ public class HumanPlacer : MonoBehaviour
             if (instance == null)
                 continue;
             instance.transform.localPosition = localPos;
+            instance.transform.localScale = prefab.transform.localScale * humanScale;
 
             if (faceCenter)
                 instance.transform.localRotation = Quaternion.LookRotation(-localPos.normalized, Vector3.up);
@@ -107,16 +105,25 @@ public class HumanPlacer : MonoBehaviour
 
     private void OnDrawGizmosSelected()
     {
-        Gizmos.color = Color.cyan;
         Gizmos.matrix = transform.localToWorldMatrix;
+        DrawCircle(coneRadius, Color.cyan);
+
+        HumanConeController controller = GetComponentInParent<HumanConeController>();
+        if (controller != null)
+            DrawCircle(controller.CylinderRadius, Color.gray);
+    }
+
+    private static void DrawCircle(float r, Color color)
+    {
+        Gizmos.color = color;
         const int segments = 64;
         for (int i = 0; i < segments; i++)
         {
             float a0 = i * Mathf.PI * 2f / segments;
             float a1 = (i + 1) * Mathf.PI * 2f / segments;
             Gizmos.DrawLine(
-                new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)) * radius,
-                new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1)) * radius);
+                new Vector3(Mathf.Cos(a0), 0f, Mathf.Sin(a0)) * r,
+                new Vector3(Mathf.Cos(a1), 0f, Mathf.Sin(a1)) * r);
         }
     }
 }
