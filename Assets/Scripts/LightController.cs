@@ -21,6 +21,12 @@ public class LightController : MonoBehaviour
 
         [Tooltip("Tauscht Base- und Schatten-Farbe für dieses Material (z.B. Human)")]
         public bool invertColors;
+
+        [Tooltip("Dauer der Überblendung von einer Farbe zur nächsten in Sekunden.")]
+        public float cycleInterval = 1f;
+
+        [Tooltip("Zeitversatz in Sekunden, um Materialien gegeneinander zu verschieben.")]
+        public float cycleOffset;
     }
 
     [Tooltip("Alle Materialien, die zentral eingefärbt werden sollen (Dach, Donut, Human, ...)")]
@@ -36,28 +42,11 @@ public class LightController : MonoBehaviour
     [Tooltip("Liste an Farben, durch die für die Base Color rotiert wird. Leer = keine Rotation, baseColor bleibt wie eingestellt.")]
     public Color[] baseColorCycle;
 
-    [Tooltip("Dauer der Überblendung von einer Farbe zur nächsten in Sekunden.")]
-    public float cycleInterval = 1f;
-
-    [Tooltip("Rotation an/aus (läuft nur im Play Mode).")]
-    public bool cycleEnabled = true;
-
     static readonly int BaseColorID = Shader.PropertyToID("_BaseColor");
     static readonly int ShadowColorID = Shader.PropertyToID("_ShadowColor");
 
-    int cycleIndex;
-    float cycleTimer;
-
     void OnEnable()
     {
-        cycleTimer = 0f;
-        cycleIndex = 0;
-
-        // Im Play Mode direkt mit der ersten Farbe der Liste starten,
-        // statt erst nach dem ersten Intervall umzuspringen.
-        if (Application.isPlaying && cycleEnabled && baseColorCycle != null && baseColorCycle.Length > 0)
-            baseColor = baseColorCycle[0];
-
         Apply();
     }
 
@@ -65,25 +54,29 @@ public class LightController : MonoBehaviour
     {
         // Zeitbasierte Rotation nur im Play Mode; im Edit Mode läuft Update
         // durch [ExecuteAlways] nur sporadisch und würde unregelmäßig springen.
-        if (!Application.isPlaying || !cycleEnabled || baseColorCycle == null || baseColorCycle.Length == 0)
+        if (!Application.isPlaying || baseColorCycle == null || baseColorCycle.Length == 0 || materials == null)
             return;
 
-        cycleTimer += Time.deltaTime;
-        if (cycleTimer >= cycleInterval)
+        foreach (var entry in materials)
         {
-            cycleTimer -= cycleInterval;
-            cycleIndex = (cycleIndex + 1) % baseColorCycle.Length;
+            if (entry == null || entry.material == null)
+                continue;
+
+            // Position im Farbkreis aus Zeit, Offset und Intervall des Eintrags:
+            // ganzzahliger Teil = aktuelle Farbe, Nachkommateil = Blendfortschritt.
+            float interval = Mathf.Max(entry.cycleInterval, 0.0001f);
+            float pos = (Time.time + entry.cycleOffset) / interval;
+
+            int index = (int)Mathf.Repeat(Mathf.Floor(pos), baseColorCycle.Length);
+            float t = Mathf.Repeat(pos, 1f);
+
+            Color current = baseColorCycle[index];
+            Color next = baseColorCycle[(index + 1) % baseColorCycle.Length];
+            Color color = LerpHSV(current, next, t);
+
+            entry.material.SetColor(BaseColorID, entry.invertColors ? shadowColor : color);
+            entry.material.SetColor(ShadowColorID, entry.invertColors ? color : shadowColor);
         }
-
-        // Konstante Rotation: über das ganze Intervall von der aktuellen
-        // zur nächsten Farbe blenden, ohne Haltephase.
-        float t = Mathf.Clamp01(cycleTimer / cycleInterval);
-
-        Color current = baseColorCycle[cycleIndex];
-        Color next = baseColorCycle[(cycleIndex + 1) % baseColorCycle.Length];
-        baseColor = LerpHSV(current, next, t);
-
-        Apply();
     }
 
     void OnValidate()
