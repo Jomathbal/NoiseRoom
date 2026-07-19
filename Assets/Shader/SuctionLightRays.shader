@@ -34,6 +34,9 @@ Shader "Custom/SuctionLightRays"
         // Fakes Volumen: an der Silhouette (streifender Blick) wird der Effekt dichter.
         _EdgePower ("Silhouetten-Power", Range(0.5, 8)) = 2.0
 
+        _EdgeFade ("Rand-Weichheit", Range(0.01, 1)) = 0.35
+        // Blendet den Effekt zur Silhouette hin weich aus, statt hart an der Mesh-Kante zu enden.
+
         _GrainAmount ("Film-Korn", Range(0, 1)) = 0.25
         _GrainSpeed ("Korn-Flackern", Float) = 8.0
     }
@@ -76,6 +79,7 @@ Shader "Custom/SuctionLightRays"
                 float  _RingSharpness;
                 float  _EdgeAmount;
                 float  _EdgePower;
+                float  _EdgeFade;
                 float  _GrainAmount;
                 float  _GrainSpeed;
             CBUFFER_END
@@ -193,6 +197,11 @@ Shader "Custom/SuctionLightRays"
                 float ndotv = abs(dot(normalize(IN.normalWS), normalize(IN.viewDirWS)));
                 float fres = pow(1.0 - saturate(ndotv), _EdgePower);
                 col *= lerp(1.0, fres, _EdgeAmount);
+
+                // Weicher Rand: zur Silhouette hin auf 0 ausblenden statt harter Mesh-Kante.
+                // Quadriert, damit die Kurve am Rand flach ausläuft statt sichtbar anzusetzen.
+                float rim = smoothstep(0.0, _EdgeFade, ndotv);
+                col *= rim * rim;
 
                 // Film-Korn wie im Rest des Projekts
                 float grain = hash12(floor(IN.positionHCS.xy), _Time.y * _GrainSpeed);

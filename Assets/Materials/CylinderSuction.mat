@@ -20,19 +20,20 @@ Material:
   stringTagMap:
     RenderType: Transparent
   disabledShaderPasses: []
-  m_LockedProperties: 
+  m_LockedProperties: _EdgePower
   m_SavedProperties:
     serializedVersion: 3
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
     - _EdgeAmount: 0.594
+    - _EdgeFade: 1
     - _EdgePower: 2.78
     - _GrainAmount: 1
     - _GrainSpeed: 0
     - _HazeAmount: 0.485
     - _HeightFalloff: 2.33
-    - _Intensity: 1.81
+    - _Intensity: 7.04
     - _NoiseStretch: 2.5
     - _RayCutoff: 0.277
     - _RayHeightMax: 1
@@ -43,8 +44,8 @@ Material:
     - _StreakCount: 19
     - _TipSpeed: 1.96
     m_Colors:
-    - _ColorBottom: {r: 2.4954083, g: 2.4954083, b: 2.4954083, a: 1}
-    - _ColorTop: {r: 1, g: 0, b: 0, a: 1}
-    - _RingColor: {r: 3.3376963, g: 3.3376963, b: 3.3376963, a: 1}
+    - _ColorBottom: {r: 1, g: 1, b: 1, a: 1}
+    - _ColorTop: {r: 1, g: 1, b: 1, a: 1}
+    - _RingColor: {r: 1, g: 1, b: 1, a: 1}
   m_BuildTextureStacks: []
   m_AllowLocking: 1
