@@ -174,6 +174,7 @@ GameObject:
   - component: {fileID: 315481185}
   - component: {fileID: 315481184}
   - component: {fileID: 315481183}
+  - component: {fileID: 315481186}
   m_Layer: 0
   m_Name: Dome
   m_TagString: Untagged
@@ -253,6 +254,24 @@ Transform:
   m_Children: []
   m_Father: {fileID: 0}
   m_LocalEulerAnglesHint: {x: -90, y: 0, z: 0}
+--- !u!114 &315481186
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 315481182}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: ad8105fcad0f54f2c834e16d81723b03, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::DomeImageFader
+  domeRenderer: {fileID: 315481183}
+  images:
+  - {fileID: 2800000, guid: 1b4146cdb6d844ba8bd95ec811979dd6, type: 3}
+  - {fileID: 2800000, guid: 7af7fb424825f4acc90485914ac76c7e, type: 3}
+  fadeDuration: 1.5
+  startIndex: 0
 --- !u!1 &315668264
 GameObject:
   m_ObjectHideFlags: 0
@@ -700,7 +719,7 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 410087039}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0.17249976, z: 0, w: -0.98500955}
+  m_LocalRotation: {x: 0, y: 0.93052304, z: 0, w: 0.36623344}
   m_LocalPosition: {x: 0, y: 3, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
