@@ -23,14 +23,23 @@ public class CameraController : MonoBehaviour
     [Header("Touch")]
     public float touchLookSensitivity = 0.2f;
 
-    [Header("Pause")]
-    public bool paused = false; // if true, the mouse no longer moves the camera
+    [Header("Suction")]
+    public float suctionRadius = 5f;      // horizontal (x/z) distance to the world origin within which the suction pulls
+    public float suctionHeight = 20f;     // height at which the suction force reaches its maximum
+    public float minSuctionForce = 5f;    // upward acceleration at ground level (y = 0)
+    public float maxSuctionForce = 30f;   // upward acceleration at suctionHeight and above
+    public float maxSuctionSpeed = 15f;   // upper limit for the velocity the suction can build up
+    public float suctionPitchSpeed = 45f; // degrees per second the camera pitches upward at full suction speed
+
+    [Header("Debug (read-only)")]
+    public float distanceToCenter;        // current horizontal (x/z) distance to the world origin, updated every frame
 
     private CharacterController controller;
     private float yaw;
     private float pitch;
     private Vector3 currentVelocity;   // horizontal movement (W/A/S/D), relative to look direction
     private float verticalVelocity;    // vertical movement (E/Q), always along world Y, independent of look direction
+    private float suctionVelocity;     // upward velocity built up by the suction around the world origin
 
     // Touch: left screen half = move forward (like holding W), right half = drag to look around.
     // Finger IDs are tracked so both can be active at the same time (one finger per half).
@@ -74,6 +83,7 @@ public class CameraController : MonoBehaviour
             // at its old speed the moment control comes back.
             currentVelocity = Vector3.zero;
             verticalVelocity = 0f;
+            suctionVelocity = 0f;
         }
 
         enabled = value;
@@ -96,6 +106,13 @@ public class CameraController : MonoBehaviour
             controller.enabled = true;
 
         SyncFromTransform();
+
+        // A teleport is a hard cut: any built-up momentum (including the suction pull)
+        // must not carry over, otherwise the player keeps drifting upward and the
+        // suction keeps pitching the view after landing at the reset point.
+        currentVelocity = Vector3.zero;
+        verticalVelocity = 0f;
+        suctionVelocity = 0f;
     }
 
     // eulerAngles reports 0..360; pitch is clamped against a symmetric range around 0.
@@ -107,7 +124,10 @@ public class CameraController : MonoBehaviour
 
     void Update()
     {
+        // Suction runs before mouse look so its pitch change gets applied (and clamped)
+        // together with the mouse input in the same frame.
         HandleTouches();
+        HandleSuction();
         HandleMouseLook();
         HandleMovement();
     }
@@ -148,9 +168,6 @@ public class CameraController : MonoBehaviour
 
     void HandleMouseLook()
     {
-        // In pause mode the mouse should no longer be able to look around with the camera
-        if (paused) return;
-
         // Skip the mouse axes while touching: Unity simulates mouse input from touches
         // by default, which would apply the drag a second time on top of the touch look.
         if (Input.touchCount == 0)
@@ -241,7 +258,41 @@ public class CameraController : MonoBehaviour
             motion = motion.normalized * maxOverallSpeed;
         }
 
+        // Suction is an external force, added after the clamp so the player's own
+        // speed limit can't cancel out the upward pull.
+        motion += Vector3.up * suctionVelocity;
+
         controller.Move(motion * Time.deltaTime);
+    }
+
+    // Inside suctionRadius (horizontal x/z distance to the world origin) an upward force
+    // accelerates the player. The force grows with height and peaks at suctionHeight.
+    void HandleSuction()
+    {
+        Vector3 pos = transform.position;
+        distanceToCenter = new Vector2(pos.x, pos.z).magnitude;
+
+        if (distanceToCenter < suctionRadius)
+        {
+            float t = Mathf.Clamp01(pos.y / suctionHeight);
+            float force = Mathf.Lerp(minSuctionForce, maxSuctionForce, t);
+
+            suctionVelocity += force * Time.deltaTime;
+            suctionVelocity = Mathf.Min(suctionVelocity, maxSuctionSpeed);
+        }
+        else
+        {
+            // Outside the radius the built-up suction velocity decays instead of stopping abruptly
+            suctionVelocity = Mathf.MoveTowards(suctionVelocity, 0f, verticalDeceleration * Time.deltaTime);
+        }
+
+        // The suction also drags the view upward: the camera pitches towards looking up,
+        // scaled by how strong the current pull is (same velocity that drives the position).
+        if (suctionVelocity > 0f && maxSuctionSpeed > 0f)
+        {
+            float pull = suctionVelocity / maxSuctionSpeed;
+            pitch = Mathf.MoveTowards(pitch, -maxLookAngle, suctionPitchSpeed * pull * Time.deltaTime);
+        }
     }
 
 
