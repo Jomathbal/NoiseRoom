@@ -32,6 +32,7 @@ public class CameraController : MonoBehaviour
     public float suctionPitchSpeed = 45f; // degrees per second the camera pitches upward at full suction speed
     public float centerPullForce = 10f;   // horizontal acceleration towards the center axis (0, y, 0)
     public float maxCenterPullSpeed = 8f; // upper limit for the horizontal pull velocity
+    public float centerPullDamping = 12f; // how fast sideways pull momentum decays (prevents orbiting/overshooting past the axis)
 
     [Header("Debug (read-only)")]
     public float distanceToCenter;        // current horizontal (x/z) distance to the world origin, updated every frame
@@ -44,10 +45,9 @@ public class CameraController : MonoBehaviour
     private float suctionVelocity;     // upward velocity built up by the suction around the world origin
     private Vector3 centerPullVelocity; // horizontal velocity pulling towards the center axis (0, y, 0)
 
-    // Touch: left screen half = move forward (like holding W), right half = drag to look around.
-    // Finger IDs are tracked so both can be active at the same time (one finger per half).
-    private int moveTouchFingerId = -1;
-    private int lookTouchFingerId = -1;
+    // Touch: single-touch scheme. Holding a finger anywhere moves forward (like holding W),
+    // and dragging that same finger looks around at the same time. Only the first finger counts.
+    private int activeTouchFingerId = -1;
 
 
     // Awake, not Start: an external driver (SliderKeyframes) may disable this component
@@ -137,8 +137,8 @@ public class CameraController : MonoBehaviour
         HandleMovement();
     }
 
-    // Assigns fingers to their role based on which screen half they started in,
-    // and releases them again when the touch ends.
+    // Claims the first finger that touches down (anywhere on the screen) and
+    // releases it again when that touch ends.
     void HandleTouches()
     {
         for (int i = 0; i < Input.touchCount; i++)
@@ -148,24 +148,14 @@ public class CameraController : MonoBehaviour
             switch (touch.phase)
             {
                 case TouchPhase.Began:
-                    if (touch.position.x < Screen.width * 0.5f)
-                    {
-                        if (moveTouchFingerId == -1)
-                            moveTouchFingerId = touch.fingerId;
-                    }
-                    else
-                    {
-                        if (lookTouchFingerId == -1)
-                            lookTouchFingerId = touch.fingerId;
-                    }
+                    if (activeTouchFingerId == -1)
+                        activeTouchFingerId = touch.fingerId;
                     break;
 
                 case TouchPhase.Ended:
                 case TouchPhase.Canceled:
-                    if (touch.fingerId == moveTouchFingerId)
-                        moveTouchFingerId = -1;
-                    if (touch.fingerId == lookTouchFingerId)
-                        lookTouchFingerId = -1;
+                    if (touch.fingerId == activeTouchFingerId)
+                        activeTouchFingerId = -1;
                     break;
             }
         }
@@ -181,13 +171,13 @@ public class CameraController : MonoBehaviour
             pitch -= Input.GetAxis("Mouse Y") * mouseSensitivity;
         }
 
-        // Dragging on the right screen half looks around, same as the mouse
-        if (lookTouchFingerId != -1)
+        // Dragging the active finger looks around, same as the mouse
+        if (activeTouchFingerId != -1)
         {
             for (int i = 0; i < Input.touchCount; i++)
             {
                 Touch touch = Input.GetTouch(i);
-                if (touch.fingerId != lookTouchFingerId) continue;
+                if (touch.fingerId != activeTouchFingerId) continue;
 
                 yaw += touch.deltaPosition.x * touchLookSensitivity;
                 pitch -= touch.deltaPosition.y * touchLookSensitivity;
@@ -211,8 +201,8 @@ public class CameraController : MonoBehaviour
         // Sum up all pressed keys into one input direction -> multiple keys at once are possible (e.g. W+A = forward left)
         Vector3 inputDir = Vector3.zero;
 
-        // A held touch on the left screen half moves forward, like holding W
-        if (Input.GetKey(KeyCode.W) || moveTouchFingerId != -1) inputDir += forward;
+        // Any held touch moves forward, like holding W (looking around while touching keeps moving)
+        if (Input.GetKey(KeyCode.W) || activeTouchFingerId != -1) inputDir += forward;
         if (Input.GetKey(KeyCode.S)) inputDir -= forward;
         if (Input.GetKey(KeyCode.D)) inputDir += right;
         if (Input.GetKey(KeyCode.A)) inputDir -= right;
@@ -286,17 +276,34 @@ public class CameraController : MonoBehaviour
             suctionVelocity = Mathf.Min(suctionVelocity, maxSuctionSpeed);
 
             // Horizontal pull towards the center axis (0, y, 0)
-            Vector3 toCenter = new Vector3(-pos.x, 0f, -pos.z);
             if (distanceToCenter > 0.001f)
             {
-                centerPullVelocity += toCenter / distanceToCenter * centerPullForce * Time.deltaTime;
-                centerPullVelocity = Vector3.ClampMagnitude(centerPullVelocity, maxCenterPullSpeed);
-            }
+                Vector3 dirToCenter = new Vector3(-pos.x, 0f, -pos.z) / distanceToCenter;
 
-            // Never faster towards the axis than the remaining distance allows, otherwise
-            // the pull overshoots past the center and oscillates back and forth around it.
-            float maxSpeedTowardsCenter = distanceToCenter / Time.deltaTime;
-            centerPullVelocity = Vector3.ClampMagnitude(centerPullVelocity, maxSpeedTowardsCenter);
+                centerPullVelocity += dirToCenter * centerPullForce * Time.deltaTime;
+                centerPullVelocity = Vector3.ClampMagnitude(centerPullVelocity, maxCenterPullSpeed);
+
+                // The pull is a central force with momentum: the acceleration always points at the
+                // current center direction, but the accumulated velocity keeps its old direction.
+                // Without damping that sideways leftover makes the player orbit / shoot past the
+                // axis instead of settling on it. Split off everything that no longer points at
+                // the axis (including any away-pointing part) and damp it away.
+                float radialSpeed = Mathf.Max(Vector3.Dot(centerPullVelocity, dirToCenter), 0f);
+                Vector3 radialVelocity = dirToCenter * radialSpeed;
+                Vector3 staleVelocity = centerPullVelocity - radialVelocity;
+                staleVelocity = Vector3.MoveTowards(staleVelocity, Vector3.zero, centerPullDamping * Time.deltaTime);
+
+                // Never faster towards the axis than the remaining distance allows, otherwise
+                // the pull overshoots past the center within a single frame.
+                radialVelocity = Vector3.ClampMagnitude(radialVelocity, distanceToCenter / Time.deltaTime);
+
+                centerPullVelocity = radialVelocity + staleVelocity;
+            }
+            else
+            {
+                // Practically on the axis: any leftover pull momentum would only carry past it.
+                centerPullVelocity = Vector3.zero;
+            }
         }
         else
         {
