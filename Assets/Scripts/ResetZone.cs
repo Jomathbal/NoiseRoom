@@ -85,6 +85,12 @@ public class ResetZone : MonoBehaviour
         // gerendert hat, bevor das Overlay verschwindet
         yield return null;
 
+        // Destroy() greift erst am Frame-Ende, rt.Release() sofort: Kamera vorher
+        // deaktivieren und vom RT trennen, sonst rendert sie noch einen Frame auf
+        // ein freigegebenes Target ("Screen position out of view frustum"-Warnung).
+        blendCam.enabled = false;
+        blendCam.targetTexture = null;
+
         Destroy(canvasGo);
         Destroy(camGo);
         rt.Release();

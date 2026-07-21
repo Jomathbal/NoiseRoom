@@ -8,6 +8,13 @@ Shader "Custom/DomeCrossfade"
 
         [HDR] _Tint ("Tint / Helligkeit", Color) = (1, 1, 1, 1)
 
+        _NoiseAmount ("Noise Amount (0 = clean, 1 = voll Noise)", Range(0, 1)) = 0
+        _NoiseColor ("Noise Color", Color) = (0, 0, 0, 1)
+
+        _FlickerSpeed ("Flicker Speed", Float) = 1.0
+        // 0 = kein Flackern (Noise-Muster steht still)
+        // >0 = pro Frame neu gewürfelt, höher = "wilderes" Flackern
+
         [Enum(UnityEngine.Rendering.CullMode)] _Cull ("Cull (1 = Front für Innenansicht)", Float) = 2
     }
 
@@ -34,11 +41,17 @@ Shader "Custom/DomeCrossfade"
             TEXTURE2D(_TexB);
             SAMPLER(sampler_TexB);
 
+            // Größe eines Noise-"Korns" in Bildschirm-Pixeln (fest, nicht im Inspector einstellbar)
+            static const float NOISE_PIXEL_SIZE = 1.0;
+
             CBUFFER_START(UnityPerMaterial)
                 float4 _TexA_ST;
                 float4 _TexB_ST;
                 float _Blend;
                 half4 _Tint;
+                float _NoiseAmount;
+                half4 _NoiseColor;
+                float _FlickerSpeed;
             CBUFFER_END
 
             struct Attributes
@@ -63,11 +76,29 @@ Shader "Custom/DomeCrossfade"
                 return OUT;
             }
 
+            // 2D-Hash: Pixelkoordinate + Seed (Zeit) -> pseudo-zufälliger Wert in [0,1)
+            // (identisch zu RaytraceNoiseSurface, damit das Korn gleich aussieht)
+            float hash12(float2 p, float seed)
+            {
+                float3 p3 = frac(p.xyx * 0.1031 + seed);
+                p3 += dot(p3, p3.yzx + 33.33);
+                return frac((p3.x + p3.y) * p3.z);
+            }
+
             half4 frag(Varyings IN) : SV_Target
             {
                 half4 colA = SAMPLE_TEXTURE2D(_TexA, sampler_TexA, IN.uvA);
                 half4 colB = SAMPLE_TEXTURE2D(_TexB, sampler_TexB, IN.uvB);
-                return lerp(colA, colB, _Blend) * _Tint;
+                half4 col = lerp(colA, colB, _Blend) * _Tint;
+
+                // Hash aus Bildschirm-Pixelkoordinate (+ Zeit für Flackern pro Frame)
+                float2 pixelCoord = floor(IN.positionHCS.xy / NOISE_PIXEL_SIZE);
+                float rnd = hash12(pixelCoord, _Time.y * _FlickerSpeed);
+
+                // Hard Dropout: Pixel ist entweder Bildfarbe oder komplett Noise-Farbe
+                float lit = step(rnd, 1.0 - _NoiseAmount);
+
+                return half4(lerp(_NoiseColor.rgb, col.rgb, lit), 1.0);
             }
             ENDHLSL
         }
