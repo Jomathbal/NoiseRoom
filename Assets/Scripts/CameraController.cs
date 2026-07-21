@@ -8,13 +8,8 @@ public class CameraController : MonoBehaviour
     public float acceleration = 20f;
     public float deceleration = 10f;
 
-    [Header("Vertical Movement")]
-    public float maxVerticalSpeed = 9f;
-    public float verticalAcceleration = 20f;
-    public float verticalDeceleration = 10f;
-
-    [Header("Overall Speed Limit")]
-    public float maxOverallSpeed = 12f; // limits the combined total speed (horizontal + vertical), independent of the individual limits
+    [Header("Vertical")]
+    public float verticalDeceleration = 10f; // how fast leftover suction velocity decays outside the suction radius
 
     [Header("Mouse")]
     public float mouseSensitivity = 2f;
@@ -34,16 +29,24 @@ public class CameraController : MonoBehaviour
     public float maxCenterPullSpeed = 8f; // upper limit for the horizontal pull velocity
     public float centerPullDamping = 12f; // how fast sideways pull momentum decays (prevents orbiting/overshooting past the axis)
 
+    [Header("Reset Spin")]
+    public float resetSpinDegrees = 180f; // yaw rotation played after a reset teleport (turns the view around)
+    public float resetSpinDuration = 5f;  // seconds the reset spin takes
+
     [Header("Debug (read-only)")]
     public float distanceToCenter;        // current horizontal (x/z) distance to the world origin, updated every frame
 
     private CharacterController controller;
     private float yaw;
     private float pitch;
-    private Vector3 currentVelocity;   // horizontal movement (W/A/S/D), relative to look direction
-    private float verticalVelocity;    // vertical movement (E/Q), always along world Y, independent of look direction
+    private Vector3 currentVelocity;   // horizontal movement (W/A/S/D), relative to look direction (yaw only)
     private float suctionVelocity;     // upward velocity built up by the suction around the world origin
     private Vector3 centerPullVelocity; // horizontal velocity pulling towards the center axis (0, y, 0)
+
+    // Reset spin: eased 180° turn played after a reset. Applied as a per-frame yaw
+    // delta so mouse/touch look keeps working on top of it instead of being frozen.
+    private float spinElapsed = -1f;   // < 0 = no spin running
+    private float spinPrevOffset;      // eased offset already applied, to derive this frame's delta
 
     // Touch: single-touch scheme. Holding a finger anywhere moves forward (like holding W),
     // and dragging that same finger looks around at the same time. Only the first finger counts.
@@ -85,9 +88,9 @@ public class CameraController : MonoBehaviour
             // Velocity survives the disable, so without this the camera keeps drifting
             // at its old speed the moment control comes back.
             currentVelocity = Vector3.zero;
-            verticalVelocity = 0f;
             suctionVelocity = 0f;
             centerPullVelocity = Vector3.zero;
+            spinElapsed = -1f;
         }
 
         enabled = value;
@@ -115,9 +118,17 @@ public class CameraController : MonoBehaviour
         // must not carry over, otherwise the player keeps drifting upward and the
         // suction keeps pitching the view after landing at the reset point.
         currentVelocity = Vector3.zero;
-        verticalVelocity = 0f;
         suctionVelocity = 0f;
         centerPullVelocity = Vector3.zero;
+        spinElapsed = -1f;
+    }
+
+    // Slowly turns the view around by resetSpinDegrees (ease-in-out over
+    // resetSpinDuration). Called by ResetZone right after the reset teleport.
+    public void StartResetSpin()
+    {
+        spinElapsed = 0f;
+        spinPrevOffset = 0f;
     }
 
     // eulerAngles reports 0..360; pitch is clamped against a symmetric range around 0.
@@ -133,6 +144,7 @@ public class CameraController : MonoBehaviour
         // together with the mouse input in the same frame.
         HandleTouches();
         HandleSuction();
+        HandleResetSpin();
         HandleMouseLook();
         HandleMovement();
     }
@@ -159,6 +171,23 @@ public class CameraController : MonoBehaviour
                     break;
             }
         }
+    }
+
+    // Feeds the eased turn into yaw as per-frame deltas. Runs before HandleMouseLook
+    // so the offset ends up in the same rotation write as the look input.
+    void HandleResetSpin()
+    {
+        if (spinElapsed < 0f) return;
+
+        spinElapsed += Time.deltaTime;
+        float t = resetSpinDuration > 0f ? Mathf.Clamp01(spinElapsed / resetSpinDuration) : 1f;
+        float offset = Mathf.SmoothStep(0f, resetSpinDegrees, t);
+
+        yaw += offset - spinPrevOffset;
+        spinPrevOffset = offset;
+
+        if (t >= 1f)
+            spinElapsed = -1f;
     }
 
     void HandleMouseLook()
@@ -192,9 +221,10 @@ public class CameraController : MonoBehaviour
 
     void HandleMovement()
     {
-        Quaternion lookRotation = Quaternion.Euler(pitch, yaw, 0f);
+        // Yaw only, no pitch: user movement stays on the x/z plane no matter where
+        // the camera looks. The suction is the only thing that moves the player vertically.
+        Quaternion lookRotation = Quaternion.Euler(0f, yaw, 0f);
 
-        // Full look direction including pitch -> you fly in the direction you're looking
         Vector3 forward = lookRotation * Vector3.forward;
         Vector3 right = lookRotation * Vector3.right;
 
@@ -227,35 +257,9 @@ public class CameraController : MonoBehaviour
             currentVelocity = Vector3.MoveTowards(currentVelocity, Vector3.zero, deceleration * Time.deltaTime);
         }
 
-        // Vertical movement (E up, Q down) -> always along world Y, independent of look direction/pitch
-        float verticalInput = 0f;
-        if (Input.GetKey(KeyCode.E)) verticalInput += 1f;
-        if (Input.GetKey(KeyCode.Q)) verticalInput -= 1f;
-
-        if (verticalInput != 0f)
-        {
-            verticalVelocity += verticalInput * verticalAcceleration * Time.deltaTime;
-            verticalVelocity = Mathf.Clamp(verticalVelocity, -maxVerticalSpeed, maxVerticalSpeed);
-        }
-        else
-        {
-            verticalVelocity = Mathf.MoveTowards(verticalVelocity, 0f, verticalDeceleration * Time.deltaTime);
-        }
-
-        Vector3 motion = currentVelocity + Vector3.up * verticalVelocity;
-
-        // Clamp overall speed: horizontal + vertical can add up (e.g. looking steeply down + W + Q),
-        // so the combined magnitude can exceed maxSpeed or maxVerticalSpeed individually.
-        // This only clamps the actual movement for this frame, not currentVelocity/verticalVelocity themselves,
-        // so that acceleration/deceleration of the individual axes keeps working independently of each other.
-        if (motion.magnitude > maxOverallSpeed)
-        {
-            motion = motion.normalized * maxOverallSpeed;
-        }
-
-        // Suction is an external force, added after the clamp so the player's own
-        // speed limit can't cancel out the pull.
-        motion += Vector3.up * suctionVelocity + centerPullVelocity;
+        // Suction is an external force on top of the user's horizontal movement —
+        // the only source of vertical motion.
+        Vector3 motion = currentVelocity + Vector3.up * suctionVelocity + centerPullVelocity;
 
         controller.Move(motion * Time.deltaTime);
     }

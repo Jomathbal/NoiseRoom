@@ -81,6 +81,9 @@ public class ResetZone : MonoBehaviour
         // Das Overlay deckt jetzt vollständig -> der Sprung ist unsichtbar
         player.TeleportTo(resetPoint.position, resetPoint.rotation);
 
+        // Nach dem Reset dreht sich die Sicht langsam um 180° nach hinten
+        player.StartResetSpin();
+
         // Einen Frame warten, damit die Hauptkamera das neue Bild bereits
         // gerendert hat, bevor das Overlay verschwindet
         yield return null;
