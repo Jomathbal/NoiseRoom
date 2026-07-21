@@ -2,8 +2,10 @@ Shader "Custom/RaytraceNoiseSurface"
 {
     Properties
     {
-        _BaseColor ("Base Color (Licht-zugewandte Seite)", Color) = (1,1,1,1)
-        _ShadowColor ("Noise/Schatten Color", Color) = (0,0,0,1)
+        _BaseColor ("Color 1 (Licht-zugewandte Seite)", Color) = (1,1,1,1)
+        _MidColor1 ("Color 2", Color) = (0.66,0.66,0.66,1)
+        _MidColor2 ("Color 3", Color) = (0.33,0.33,0.33,1)
+        _ShadowColor ("Color 4 (Noise/Schatten)", Color) = (0,0,0,1)
 
         _NoiseCurveTex ("Noise Falloff Curve (U: 0=0°, 1=180° / Wert: 0=clean, 1=voll Noise)", 2D) = "white" {}
         // Wird von NoiseFalloffCurveBaker.cs aus einer Unity AnimationCurve gebacken.
@@ -52,6 +54,8 @@ Shader "Custom/RaytraceNoiseSurface"
 
             CBUFFER_START(UnityPerMaterial)
                 float4 _BaseColor;
+                float4 _MidColor1;
+                float4 _MidColor2;
                 float4 _ShadowColor;
                 float  _FlickerSpeed;
             CBUFFER_END
@@ -90,10 +94,20 @@ Shader "Custom/RaytraceNoiseSurface"
                 float2 pixelCoord = floor(IN.positionHCS.xy / NOISE_PIXEL_SIZE);
                 float rnd = hash12(pixelCoord, _Time.y * _FlickerSpeed);
 
-                // Hard Dropout: Pixel ist entweder normale Farbe oder komplett "Schatten"-Farbe
-                float lit = step(rnd, 1.0 - noiseAmount);
+                // Position im 4-Farben-Verlauf: noiseAmount 0..1 -> 3 Übergänge (Color 1..4).
+                // band = zwischen welchen zwei Nachbarfarben, f = Fortschritt im Übergang.
+                float pos  = noiseAmount * 3.0;
+                float band = min(floor(pos), 2.0);
+                float f    = pos - band;
 
-                half3 color = lerp(_ShadowColor.rgb, _BaseColor.rgb, lit);
+                half3 c0, c1;
+                if (band < 0.5)      { c0 = _BaseColor.rgb; c1 = _MidColor1.rgb; }
+                else if (band < 1.5) { c0 = _MidColor1.rgb; c1 = _MidColor2.rgb; }
+                else                 { c0 = _MidColor2.rgb; c1 = _ShadowColor.rgb; }
+
+                // Noisy Dithering statt weichem Verlauf: jeder Pixel bekommt gewürfelt
+                // exakt eine der beiden Nachbarfarben, Wahrscheinlichkeit = f.
+                half3 color = lerp(c0, c1, step(rnd, f));
                 return half4(color, 1.0);
             }
             ENDHLSL
