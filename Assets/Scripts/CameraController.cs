@@ -20,6 +20,9 @@ public class CameraController : MonoBehaviour
     public float mouseSensitivity = 2f;
     public float maxLookAngle = 90f;
 
+    [Header("Touch")]
+    public float touchLookSensitivity = 0.2f;
+
     [Header("Pause")]
     public bool paused = false; // if true, the mouse no longer moves the camera
 
@@ -28,6 +31,11 @@ public class CameraController : MonoBehaviour
     private float pitch;
     private Vector3 currentVelocity;   // horizontal movement (W/A/S/D), relative to look direction
     private float verticalVelocity;    // vertical movement (E/Q), always along world Y, independent of look direction
+
+    // Touch: left screen half = move forward (like holding W), right half = drag to look around.
+    // Finger IDs are tracked so both can be active at the same time (one finger per half).
+    private int moveTouchFingerId = -1;
+    private int lookTouchFingerId = -1;
 
 
     // Awake, not Start: an external driver (SliderKeyframes) may disable this component
@@ -99,8 +107,43 @@ public class CameraController : MonoBehaviour
 
     void Update()
     {
+        HandleTouches();
         HandleMouseLook();
         HandleMovement();
+    }
+
+    // Assigns fingers to their role based on which screen half they started in,
+    // and releases them again when the touch ends.
+    void HandleTouches()
+    {
+        for (int i = 0; i < Input.touchCount; i++)
+        {
+            Touch touch = Input.GetTouch(i);
+
+            switch (touch.phase)
+            {
+                case TouchPhase.Began:
+                    if (touch.position.x < Screen.width * 0.5f)
+                    {
+                        if (moveTouchFingerId == -1)
+                            moveTouchFingerId = touch.fingerId;
+                    }
+                    else
+                    {
+                        if (lookTouchFingerId == -1)
+                            lookTouchFingerId = touch.fingerId;
+                    }
+                    break;
+
+                case TouchPhase.Ended:
+                case TouchPhase.Canceled:
+                    if (touch.fingerId == moveTouchFingerId)
+                        moveTouchFingerId = -1;
+                    if (touch.fingerId == lookTouchFingerId)
+                        lookTouchFingerId = -1;
+                    break;
+            }
+        }
     }
 
     void HandleMouseLook()
@@ -108,11 +151,28 @@ public class CameraController : MonoBehaviour
         // In pause mode the mouse should no longer be able to look around with the camera
         if (paused) return;
 
-        float mouseX = Input.GetAxis("Mouse X") * mouseSensitivity;
-        float mouseY = Input.GetAxis("Mouse Y") * mouseSensitivity;
+        // Skip the mouse axes while touching: Unity simulates mouse input from touches
+        // by default, which would apply the drag a second time on top of the touch look.
+        if (Input.touchCount == 0)
+        {
+            yaw += Input.GetAxis("Mouse X") * mouseSensitivity;
+            pitch -= Input.GetAxis("Mouse Y") * mouseSensitivity;
+        }
 
-        yaw += mouseX;
-        pitch -= mouseY;
+        // Dragging on the right screen half looks around, same as the mouse
+        if (lookTouchFingerId != -1)
+        {
+            for (int i = 0; i < Input.touchCount; i++)
+            {
+                Touch touch = Input.GetTouch(i);
+                if (touch.fingerId != lookTouchFingerId) continue;
+
+                yaw += touch.deltaPosition.x * touchLookSensitivity;
+                pitch -= touch.deltaPosition.y * touchLookSensitivity;
+                break;
+            }
+        }
+
         pitch = Mathf.Clamp(pitch, -maxLookAngle, maxLookAngle);
 
         transform.rotation = Quaternion.Euler(pitch, yaw, 0f);
@@ -129,7 +189,8 @@ public class CameraController : MonoBehaviour
         // Sum up all pressed keys into one input direction -> multiple keys at once are possible (e.g. W+A = forward left)
         Vector3 inputDir = Vector3.zero;
 
-        if (Input.GetKey(KeyCode.W)) inputDir += forward;
+        // A held touch on the left screen half moves forward, like holding W
+        if (Input.GetKey(KeyCode.W) || moveTouchFingerId != -1) inputDir += forward;
         if (Input.GetKey(KeyCode.S)) inputDir -= forward;
         if (Input.GetKey(KeyCode.D)) inputDir += right;
         if (Input.GetKey(KeyCode.A)) inputDir -= right;
