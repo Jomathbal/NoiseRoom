@@ -30,6 +30,8 @@ public class CameraController : MonoBehaviour
     public float maxSuctionForce = 30f;   // upward acceleration at suctionHeight and above
     public float maxSuctionSpeed = 15f;   // upper limit for the velocity the suction can build up
     public float suctionPitchSpeed = 45f; // degrees per second the camera pitches upward at full suction speed
+    public float centerPullForce = 10f;   // horizontal acceleration towards the center axis (0, y, 0)
+    public float maxCenterPullSpeed = 8f; // upper limit for the horizontal pull velocity
 
     [Header("Debug (read-only)")]
     public float distanceToCenter;        // current horizontal (x/z) distance to the world origin, updated every frame
@@ -40,6 +42,7 @@ public class CameraController : MonoBehaviour
     private Vector3 currentVelocity;   // horizontal movement (W/A/S/D), relative to look direction
     private float verticalVelocity;    // vertical movement (E/Q), always along world Y, independent of look direction
     private float suctionVelocity;     // upward velocity built up by the suction around the world origin
+    private Vector3 centerPullVelocity; // horizontal velocity pulling towards the center axis (0, y, 0)
 
     // Touch: left screen half = move forward (like holding W), right half = drag to look around.
     // Finger IDs are tracked so both can be active at the same time (one finger per half).
@@ -84,6 +87,7 @@ public class CameraController : MonoBehaviour
             currentVelocity = Vector3.zero;
             verticalVelocity = 0f;
             suctionVelocity = 0f;
+            centerPullVelocity = Vector3.zero;
         }
 
         enabled = value;
@@ -113,6 +117,7 @@ public class CameraController : MonoBehaviour
         currentVelocity = Vector3.zero;
         verticalVelocity = 0f;
         suctionVelocity = 0f;
+        centerPullVelocity = Vector3.zero;
     }
 
     // eulerAngles reports 0..360; pitch is clamped against a symmetric range around 0.
@@ -259,8 +264,8 @@ public class CameraController : MonoBehaviour
         }
 
         // Suction is an external force, added after the clamp so the player's own
-        // speed limit can't cancel out the upward pull.
-        motion += Vector3.up * suctionVelocity;
+        // speed limit can't cancel out the pull.
+        motion += Vector3.up * suctionVelocity + centerPullVelocity;
 
         controller.Move(motion * Time.deltaTime);
     }
@@ -279,11 +284,25 @@ public class CameraController : MonoBehaviour
 
             suctionVelocity += force * Time.deltaTime;
             suctionVelocity = Mathf.Min(suctionVelocity, maxSuctionSpeed);
+
+            // Horizontal pull towards the center axis (0, y, 0)
+            Vector3 toCenter = new Vector3(-pos.x, 0f, -pos.z);
+            if (distanceToCenter > 0.001f)
+            {
+                centerPullVelocity += toCenter / distanceToCenter * centerPullForce * Time.deltaTime;
+                centerPullVelocity = Vector3.ClampMagnitude(centerPullVelocity, maxCenterPullSpeed);
+            }
+
+            // Never faster towards the axis than the remaining distance allows, otherwise
+            // the pull overshoots past the center and oscillates back and forth around it.
+            float maxSpeedTowardsCenter = distanceToCenter / Time.deltaTime;
+            centerPullVelocity = Vector3.ClampMagnitude(centerPullVelocity, maxSpeedTowardsCenter);
         }
         else
         {
             // Outside the radius the built-up suction velocity decays instead of stopping abruptly
             suctionVelocity = Mathf.MoveTowards(suctionVelocity, 0f, verticalDeceleration * Time.deltaTime);
+            centerPullVelocity = Vector3.MoveTowards(centerPullVelocity, Vector3.zero, deceleration * Time.deltaTime);
         }
 
         // The suction also drags the view upward: the camera pitches towards looking up,
